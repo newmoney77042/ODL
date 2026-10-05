@@ -94,7 +94,7 @@
     }
     .table-container {
       overflow-x: auto;
-      max-height: 420px;
+      max-height: 380px;
       overflow-y: auto;
       border: 3px solid var(--border-dark);
       border-radius: 4px;
@@ -187,6 +187,22 @@
       color: white;
       grid-column: span 2;
       margin-top: 4px;
+    }
+
+    /* RECEIPT BACKUP SECTION */
+    .receipt-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .receipt-thumb {
+      width: 100%;
+      height: 70px;
+      object-fit: cover;
+      border-radius: 6px;
+      border: 1px solid var(--border-dark);
+      cursor: pointer;
     }
 
     /* LOCATION SELECTION & EDIT MODAL */
@@ -300,6 +316,16 @@
     </div>
   </div>
 
+  <!-- RECEIPT & PROOF ATTACHMENTS -->
+  <div class="card">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+      <h3 style="margin:0; font-size:0.95rem;">Receipt & Expense Backups</h3>
+      <input type="file" id="receiptInput" accept="image/*" capture="environment" style="display:none;" onchange="handleReceiptUpload(event)">
+      <button class="sec-btn" style="padding:6px 10px; background:#1e3a8a;" onclick="document.getElementById('receiptInput').click()">📸 Snap Receipt</button>
+    </div>
+    <div id="receiptContainer" class="receipt-grid"></div>
+  </div>
+
   <!-- LOCATION MODAL -->
   <div id="locationModal" class="modal">
     <div class="modal-content">
@@ -325,6 +351,7 @@
 
     let activeTrip = JSON.parse(localStorage.getItem("odl_active_trip")) || null;
     let logs = JSON.parse(localStorage.getItem("odl_logs")) || [];
+    let receipts = JSON.parse(localStorage.getItem("odl_receipts")) || [];
     let lastSentDate = localStorage.getItem("odl_last_auto_send") || "";
 
     function formatTimeDisplay(totalMins) {
@@ -351,7 +378,7 @@
         localStorage.setItem("odl_last_auto_send", todayStr);
       }
 
-      // 1. Calculate Daily Driving Used
+      // Calculate Daily Driving Used
       const todayMinsUsed = logs
         .filter(l => l.date === todayStr)
         .reduce((sum, l) => sum + l.durationMins, 0);
@@ -359,7 +386,7 @@
       const minsLeft = Math.max(0, 240 - todayMinsUsed);
       document.getElementById("driveBudget").innerText = formatTimeDisplay(minsLeft);
 
-      // 2. Window Countdown
+      // Window Countdown
       let windows = [];
       if (day >= 1 && day <= 4) { 
         windows = [
@@ -508,11 +535,32 @@
       renderState();
     }
 
+    function handleReceiptUpload(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const todayStr = new Date().toISOString().split('T')[0];
+        const newReceipt = {
+          date: todayStr,
+          timeStr: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          dataUrl: e.target.result
+        };
+        receipts.push(newReceipt);
+        localStorage.setItem("odl_receipts", JSON.stringify(receipts));
+        renderState();
+      };
+      reader.readAsDataURL(file);
+    }
+
     function clearTodayLog() {
-      if (confirm("Are you sure you want to clear all driving log entries for today?")) {
+      if (confirm("Are you sure you want to clear all driving log entries and receipts for today?")) {
         const todayStr = new Date().toISOString().split('T')[0];
         logs = logs.filter(l => l.date !== todayStr);
+        receipts = receipts.filter(r => r.date !== todayStr);
         localStorage.setItem("odl_logs", JSON.stringify(logs));
+        localStorage.setItem("odl_receipts", JSON.stringify(receipts));
         renderState();
       }
     }
@@ -522,6 +570,7 @@
       const info = document.getElementById("activeTripInfo");
       const body = document.getElementById("logBody");
       const dayTotalCell = document.getElementById("dayTotalCell");
+      const receiptContainer = document.getElementById("receiptContainer");
 
       if (activeTrip) {
         btn.innerText = "STOP TRIP";
@@ -536,6 +585,7 @@
 
       const todayStr = new Date().toISOString().split('T')[0];
       const todayLogs = logs.filter(l => l.date === todayStr);
+      const todayReceipts = receipts.filter(r => r.date === todayStr);
       
       let totalMinsToday = 0;
 
@@ -558,11 +608,34 @@
 
       dayTotalCell.innerText = formatTimeDisplay(totalMinsToday);
 
+      receiptContainer.innerHTML = todayReceipts.map(r => `
+        <a href="${r.dataUrl}" target="_blank">
+          <img src="${r.dataUrl}" class="receipt-thumb" title="Receipt snapped at ${r.timeStr}">
+        </a>
+      `).join('');
+
       updateCounters();
     }
 
     function saveAndEmailLog(isAuto = false) {
       const todayStr = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+      const todayIso = new Date().toISOString().split('T')[0];
+      const todayReceipts = receipts.filter(r => r.date === todayIso);
+
+      let receiptHTML = '';
+      if (todayReceipts.length) {
+        receiptHTML = `
+          <h4 style="margin:16px 0 8px 0; color:#1e3a8a;">Supporting Receipts & Expense Documentation</h4>
+          <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            ${todayReceipts.map(r => `
+              <div style="border:1px solid #cbd5e1; padding:4px; border-radius:4px; text-align:center;">
+                <img src="${r.dataUrl}" style="max-width:140px; max-height:140px; border-radius:4px;"><br>
+                <span style="font-size:0.7rem; color:#64748b;">${r.timeStr}</span>
+              </div>
+            `).join('')}
+          </div>
+        `;
+      }
 
       const fullEmailHTML = `
         <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background:#f8fafc; padding:16px;">
@@ -572,6 +645,7 @@
           <div style="background:white; padding:8px; border-radius:8px; border:1px solid #cbd5e1;">
             ${document.getElementById('logTable').outerHTML}
           </div>
+          ${receiptHTML}
         </div>
       `;
 
@@ -582,7 +656,7 @@
 
       emailjs.send("service_fqmzxin", "template_e2ge43a", templateParams)
         .then(() => {
-          if (!isAuto) alert("Log saved and emailed successfully!");
+          if (!isAuto) alert("Log & Receipts saved and emailed successfully!");
         }, (err) => {
           if (!isAuto) alert("Failed to send email. Error: " + JSON.stringify(err));
         });
@@ -596,6 +670,17 @@
       printWindow.document.write('<h2 style="text-align:center;">Official Texas ODL Driving Log</h2>');
       printWindow.document.write('<h3 style="text-align:center; color:#1e3a8a;">' + new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) + '</h3>');
       printWindow.document.write(document.getElementById('logTable').outerHTML);
+      
+      const todayIso = new Date().toISOString().split('T')[0];
+      const todayReceipts = receipts.filter(r => r.date === todayIso);
+      if (todayReceipts.length) {
+        printWindow.document.write('<h3>Receipts & Documentation</h3><div style="display:flex; gap:10px;">');
+        todayReceipts.forEach(r => {
+          printWindow.document.write(`<div><img src="${r.dataUrl}" style="max-width:180px;"><br><small>${r.timeStr}</small></div>`);
+        });
+        printWindow.document.write('</div>');
+      }
+
       printWindow.document.write('</body></html>');
       printWindow.document.close();
       printWindow.print();
