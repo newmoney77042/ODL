@@ -182,6 +182,12 @@
       font-weight: bold;
       cursor: pointer;
     }
+    .btn-danger-sec {
+      background: #dc2626;
+      color: white;
+      grid-column: span 2;
+      margin-top: 4px;
+    }
 
     /* LOCATION SELECTION & EDIT MODAL */
     .modal {
@@ -282,7 +288,7 @@
         <tfoot>
           <tr>
             <td colspan="3" style="text-align: right; font-weight: bold; padding-right: 12px; background: #e2e8f0;">Total Drive Time Today:</td>
-            <td id="dayTotalCell" style="font-weight: bold; background: #cbd5e1;">0h 00m</td>
+            <td id="dayTotalCell" style="font-weight: bold; background: #cbd5e1;">0m</td>
           </tr>
         </tfoot>
       </table>
@@ -290,6 +296,7 @@
     <div class="btn-group">
       <button class="sec-btn" onclick="saveAndEmailLog()">Save & Email Log</button>
       <button class="sec-btn" onclick="exportLog()">Print / PDF</button>
+      <button class="sec-btn btn-danger-sec" onclick="clearTodayLog()">🗑️ Clear Today's Log</button>
     </div>
   </div>
 
@@ -499,6 +506,15 @@
         localStorage.removeItem("odl_active_trip");
       }
       renderState();
+    }
+
+    function clearTodayLog() {
+      if (confirm("Are you sure you want to clear all driving log entries for today?")) {
+        const todayStr = new Date().toISOString().split('T')[0];
+        logs = logs.filter(l => l.date !== todayStr);
+        localStorage.setItem("odl_logs", JSON.stringify(logs));
+        renderState();
+      }
     }
 
     function renderState() {
