@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Texas ODL Drive Log</title>
+  <style>
+    :root {
+      --primary: #1e3a8a;
+      --accent: #16a34a;
+      --danger: #dc2626;
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --text: #0f172a;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 16px;
+    }
+    .card {
+      background: var(--card);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    .status-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .stat-box {
+      background: #f1f5f9;
+      padding: 12px;
+      border-radius: 8px;
+      text-align: center;
+    }
+    .stat-value {
+      font-size: 1.4rem;
+      font-weight: bold;
+      color: var(--primary);
+    }
+    .stat-label {
+      font-size: 0.75rem;
+      color: #64748b;
+      text-transform: uppercase;
+      margin-top: 4px;
+    }
+    button.action-btn {
+      width: 100%;
+      padding: 18px;
+      font-size: 1.25rem;
+      font-weight: bold;
+      border: none;
+      border-radius: 12px;
+      color: white;
+      cursor: pointer;
+    }
+    .btn-start { background: var(--accent); }
+    .btn-stop { background: var(--danger); }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+      margin-top: 12px;
+    }
+    th, td {
+      padding: 8px;
+      border-bottom: 1px solid #e2e8f0;
+      text-align: left;
+    }
+    th { background: #f8fafc; }
+    .export-btn {
+      background: #475569;
+      color: white;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      width: 100%;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <div class="status-grid">
+      <div class="stat-box">
+        <div id="driveBudget" class="stat-value">4h 00m</div>
+        <div class="stat-label">Daily Driving Left</div>
+      </div>
+      <div class="stat-box">
+        <div id="windowCountdown" class="stat-value">--:--</div>
+        <div class="stat-label" id="windowLabel">Window Left</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <button id="mainBtn" class="action-btn btn-start" onclick="toggleTrip()">START TRIP</button>
+    <div id="activeTripInfo" style="text-align:center; margin-top:10px; font-size:0.9rem; color:#64748b;"></div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0;">Today's Official ODL Log</h3>
+    <table id="logTable">
+      <thead>
+        <tr>
+          <th>Start</th>
+          <th>Depart / Arrive Location</th>
+          <th>Stop</th>
+          <th>Mins</th>
+        </tr>
+      </thead>
+      <tbody id="logBody">
+      </tbody>
+    </table>
+    <button class="export-btn" onclick="exportLog()">Export / Print Log</button>
+  </div>
+
+  <script>
+    let activeTrip = JSON.parse(localStorage.getItem("odl_active_trip")) || null;
+    let logs = JSON.parse(localStorage.getItem("odl_logs")) || [];
+
+    function updateCounters() {
+      const now = new Date();
+      const day = now.getDay(); 
+      const currentMins = now.getHours() * 60 + now.getMinutes();
+
+      const todayStr = now.toISOString().split('T')[0];
+      const todayMinsUsed = logs
+        .filter(l => l.date === todayStr)
+        .reduce((sum, l) => sum + l.durationMins, 0);
+      
+      const minsLeft = Math.max(0, 240 - todayMinsUsed);
+      const hrsLeft = Math.floor(minsLeft / 60);
+      const remMins = minsLeft % 60;
+      document.getElementById("driveBudget").innerText = `${hrsLeft}h ${remMins < 10 ? '0' : ''}${remMins}m`;
+
+      let windows = [];
+      if (day >= 1 && day <= 4) { 
+        windows = [
+          { start: 7*60, end: 14*60, label: "Mon-Thu Block 1 (7 AM - 2 PM)" },
+          { start: 18*60, end: 23*60, label: "Mon-Thu Block 2 (6 PM - 11 PM)" }
+        ];
+      } else { 
+        windows = [
+          { start: 7*60, end: 19*60, label: "Fri-Sun Block (7 AM - 7 PM)" }
+        ];
+      }
+
+      let activeWin = windows.find(w => currentMins >= w.start && currentMins < w.end);
+
+      if (activeWin) {
+        let winMinsLeft = activeWin.end - currentMins;
+        let wHrs = Math.floor(winMinsLeft / 60);
+        let wMins = winMinsLeft % 60;
+        document.getElementById("windowCountdown").innerText = `${wHrs}h ${wMins < 10 ? '0' : ''}${wMins}m`;
+        document.getElementById("windowLabel").innerText = activeWin.label + " Left";
+        document.getElementById("windowCountdown").style.color = "#16a34a";
+      } else {
+        document.getElementById("windowCountdown").innerText = "CLOSED";
+        document.getElementById("windowLabel").innerText = "Outside Allowed Window";
+        document.getElementById("windowCountdown").style.color = "#dc2626";
+      }
+    }
+
+    async function getAddress() {
+      return new Promise((resolve) => {
+        if (!navigator.geolocation) resolve("GPS Unavailable");
+        navigator.geolocation.getCurrentPosition(
+          async (pos) => {
+            try {
+              const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${pos.coords.latitude}&lon=${pos.coords.longitude}`);
+              const data = await res.json();
+              resolve(data.display_name.split(',').slice(0, 3).join(', '));
+            } catch {
+              resolve(`${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)}`);
+            }
+          },
+          () => resolve("Location Denied"),
+          { timeout: 5000 }
+        );
+      });
+    }
+
+    async function toggleTrip() {
+      const btn = document.getElementById("mainBtn");
+      
+      if (!activeTrip) {
+        btn.innerText = "Locating GPS...";
+        const startLoc = await getAddress();
+        activeTrip = {
+          startTime: new Date().toISOString(),
+          startLoc: startLoc
+        };
+        localStorage.setItem("odl_active_trip", JSON.stringify(activeTrip));
+        renderState();
+      } else {
+        btn.innerText = "Locating GPS...";
+        const endLoc = await getAddress();
+        const endTime = new Date();
+        const startTime = new Date(activeTrip.startTime);
+        const durationMins = Math.round((endTime - startTime) / 60000);
+
+        const newLog = {
+          date: startTime.toISOString().split('T')[0],
+          startTimeStr: startTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          endTimeStr: endTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          startLoc: activeTrip.startLoc,
+          endLoc: endLoc,
+          durationMins: durationMins
+        };
+
+        logs.push(newLog);
+        localStorage.setItem("odl_logs", JSON.stringify(logs));
+        activeTrip = null;
+        localStorage.removeItem("odl_active_trip");
+        renderState();
+      }
+    }
+
+    function renderState() {
+      const btn = document.getElementById("mainBtn");
+      const info = document.getElementById("activeTripInfo");
+      const body = document.getElementById("logBody");
+
+      if (activeTrip) {
+        btn.innerText = "STOP TRIP";
+        btn.className = "action-btn btn-stop";
+        const startFormatted = new Date(activeTrip.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        info.innerText = `Active Drive Started at ${startFormatted} from ${activeTrip.startLoc}`;
+      } else {
+        btn.innerText = "START TRIP";
+        btn.className = "action-btn btn-start";
+        info.innerText = "";
+      }
+
+      const todayStr = new Date().toISOString().split('T')[0];
+      const todayLogs = logs.filter(l => l.date === todayStr);
+      
+      body.innerHTML = todayLogs.map(l => `
+        <tr>
+          <td><b>${l.startTimeStr}</b></td>
+          <td><b>From:</b> ${l.startLoc}<br><b>To:</b> ${l.endLoc}</td>
+          <td><b>${l.endTimeStr}</b></td>
+          <td><b>${l.durationMins}m</b></td>
+        </tr>
+      `).join('');
+
+      updateCounters();
+    }
+
+    function exportLog() {
+      let printWindow = window.open('', '', 'height=600,width=800');
+      printWindow.document.write('<html><head><title>Texas ODL Driving Log</title></head><body>');
+      printWindow.document.write('<h2>Official Texas ODL Driving Log</h2>');
+      printWindow.document.write(document.getElementById('logTable').outerHTML);
+      printWindow.document.write('</body></html>');
+      printWindow.document.close();
+      printWindow.print();
+    }
+
+    setInterval(updateCounters, 10000);
+    renderState();
+  </script>
+</body>
+</html>
