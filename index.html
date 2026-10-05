@@ -68,34 +68,55 @@
     .btn-start { background: var(--accent); }
     .btn-stop { background: var(--danger); }
     
-    /* EXCEL WIREFRAME TABLE STYLING */
+    /* SCROLLABLE TABLE CONTAINER */
+    .scroll-hint {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.75rem;
+      color: #64748b;
+      margin-bottom: 4px;
+    }
     .table-container {
       overflow-x: auto;
+      max-height: 420px; /* Vertical scrolling for heavy trip days */
+      overflow-y: auto;
+      border: 3px solid var(--border-dark);
+      border-radius: 4px;
+      -webkit-overflow-scrolling: touch;
     }
     table.excel-grid {
       width: 100%;
+      min-width: 340px;
       border-collapse: collapse;
       font-size: 0.82rem;
-      margin-top: 8px;
       background: #ffffff;
-      border: 3px solid var(--border-dark); /* Heavy Outer Framing */
     }
     table.excel-grid th {
-      background: #7dd3fc; /* Custom light blue header matching your wireframe */
+      position: sticky;
+      top: 0;
+      background: #7dd3fc; /* Wireframe light blue header */
       color: #0f172a;
       font-weight: bold;
       padding: 8px;
       border: 2px solid var(--border-dark);
       text-align: center;
+      z-index: 10;
     }
+    
+    /* ALTERNATING SHADING & BORDERS */
     table.excel-grid tr.trip-row {
-      border: 2px solid var(--border-dark); /* Heavy border around every trip batch */
+      border: 2px solid var(--border-dark);
+    }
+    table.excel-grid tr.trip-row:nth-child(odd) {
+      background: #ffffff;
     }
     table.excel-grid tr.trip-row:nth-child(even) {
-      background: #f0f9ff; /* Subtle alternate row fill matching wireframe */
+      background: #e0f2fe; /* Distinct blue-tinted alternating fill */
     }
+    
     table.excel-grid td {
-      border: 2px solid var(--border-dark); /* Column grid lines */
+      border: 2px solid var(--border-dark);
       padding: 0;
       text-align: center;
       vertical-align: middle;
@@ -105,19 +126,18 @@
       padding: 8px 4px;
     }
     
-    /* Internal From / To Divider Box */
+    /* FROM / TO SUB-DIVIDER BOX */
     .route-box {
       display: flex;
       flex-direction: column;
       text-align: left;
-      height: 100%;
     }
     .route-item {
       padding: 6px 8px;
       font-size: 0.8rem;
     }
     .route-from {
-      border-bottom: 1.5px solid var(--border-light); /* Thin internal divider line */
+      border-bottom: 1px solid var(--border-light); /* Thin internal divider line */
     }
     .route-label {
       font-weight: bold;
@@ -143,7 +163,7 @@
       cursor: pointer;
     }
 
-    /* Location Selection Modal */
+    /* LOCATION SELECTION MODAL */
     .modal {
       display: none;
       position: fixed;
@@ -158,6 +178,8 @@
       border-radius: 8px;
       width: 90%;
       max-width: 400px;
+      max-height: 80vh;
+      overflow-y: auto;
     }
     .loc-option {
       padding: 10px;
@@ -197,7 +219,10 @@
 
   <!-- LOG TABLE -->
   <div class="card">
-    <h3 style="margin:0 0 6px 0; font-size:1rem;">Today's Official ODL Log</h3>
+    <div class="scroll-hint">
+      <h3 style="margin:0; font-size:1rem;">Today's Official ODL Log</h3>
+      <span>Swipe ↔ / Scroll ↕</span>
+    </div>
     <div class="table-container">
       <table class="excel-grid" id="logTable">
         <thead>
@@ -221,7 +246,7 @@
   <div id="locationModal" class="modal">
     <div class="modal-content">
       <h4 style="margin:0 0 10px 0;">Confirm Location</h4>
-      <p style="font-size:0.8rem; color:#64748b; margin-bottom:8px;">Select the address that matches your current spot:</p>
+      <p style="font-size:0.8rem; color:#64748b; margin-bottom:8px;">Select the address option matching your spot:</p>
       <div id="locationOptions"></div>
     </div>
   </div>
@@ -285,14 +310,16 @@
     }
 
     async function fetchAddressVariants(lat, lon) {
-      // Offset step (~290ft) to give a wide radius choice
-      const offset = 0.0008; 
+      // Expanded step offset (~550ft radius catch)
+      const offset = 0.0015; 
       const offsets = [
         { lat: lat, lon: lon },
         { lat: lat + offset, lon: lon },
         { lat: lat - offset, lon: lon },
         { lat: lat, lon: lon + offset },
-        { lat: lat, lon: lon - offset }
+        { lat: lat, lon: lon - offset },
+        { lat: lat + offset, lon: lon + offset },
+        { lat: lat - offset, lon: lon - offset }
       ];
 
       let results = [];
@@ -307,7 +334,7 @@
           const state = addr.state_code || "TX";
           const postcode = addr.postcode || "";
 
-          // Clean Standard Address: Street Number, Street Name, City, State Zip
+          // Strict format: Street Number, Street Name, City, State Zip
           let formatted = `${houseNumber} ${road}, ${city}, ${state} ${postcode}`.trim().replace(/^,\s*/, '');
           if (formatted && !results.includes(formatted)) results.push(formatted);
         } catch {
@@ -433,7 +460,7 @@
     function exportLog() {
       let printWindow = window.open('', '', 'height=600,width=800');
       printWindow.document.write('<html><head><title>Texas ODL Driving Log</title>');
-      printWindow.document.write('<style>table { width:100%; border-collapse:collapse; border:3px solid #0f172a; } th { background:#7dd3fc; border:2px solid #0f172a; padding:8px; } td { border:2px solid #0f172a; padding:0; text-align:center; } .route-box { text-align:left; } .route-item { padding:6px; } .route-from { border-bottom:1.5px solid #cbd5e1; } .route-label { font-weight:bold; width:42px; display:inline-block; }</style>');
+      printWindow.document.write('<style>table { width:100%; border-collapse:collapse; border:3px solid #0f172a; } th { background:#7dd3fc; border:2px solid #0f172a; padding:8px; } tr:nth-child(even) { background:#e0f2fe; } td { border:2px solid #0f172a; padding:0; text-align:center; } .route-box { text-align:left; } .route-item { padding:6px; } .route-from { border-bottom:1px solid #cbd5e1; } .route-label { font-weight:bold; width:42px; display:inline-block; }</style>');
       printWindow.document.write('</head><body>');
       printWindow.document.write('<h2>Official Texas ODL Driving Log - ' + new Date().toLocaleDateString() + '</h2>');
       printWindow.document.write(document.getElementById('logTable').outerHTML);
