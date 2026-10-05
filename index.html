@@ -79,7 +79,7 @@
     }
     .table-container {
       overflow-x: auto;
-      max-height: 420px; /* Vertical scrolling for heavy trip days */
+      max-height: 420px;
       overflow-y: auto;
       border: 3px solid var(--border-dark);
       border-radius: 4px;
@@ -95,7 +95,7 @@
     table.excel-grid th {
       position: sticky;
       top: 0;
-      background: #7dd3fc; /* Wireframe light blue header */
+      background: #7dd3fc;
       color: #0f172a;
       font-weight: bold;
       padding: 8px;
@@ -103,8 +103,6 @@
       text-align: center;
       z-index: 10;
     }
-    
-    /* ALTERNATING SHADING & BORDERS */
     table.excel-grid tr.trip-row {
       border: 2px solid var(--border-dark);
     }
@@ -112,9 +110,8 @@
       background: #ffffff;
     }
     table.excel-grid tr.trip-row:nth-child(even) {
-      background: #e0f2fe; /* Distinct blue-tinted alternating fill */
+      background: #e0f2fe;
     }
-    
     table.excel-grid td {
       border: 2px solid var(--border-dark);
       padding: 0;
@@ -125,8 +122,6 @@
       font-weight: bold;
       padding: 8px 4px;
     }
-    
-    /* FROM / TO SUB-DIVIDER BOX */
     .route-box {
       display: flex;
       flex-direction: column;
@@ -137,7 +132,7 @@
       font-size: 0.8rem;
     }
     .route-from {
-      border-bottom: 1px solid var(--border-light); /* Thin internal divider line */
+      border-bottom: 1px solid var(--border-light);
     }
     .route-label {
       font-weight: bold;
@@ -163,7 +158,7 @@
       cursor: pointer;
     }
 
-    /* LOCATION SELECTION MODAL */
+    /* LOCATION SELECTION & EDIT MODAL */
     .modal {
       display: none;
       position: fixed;
@@ -192,6 +187,28 @@
     }
     .loc-option:active {
       background: #e2e8f0;
+    }
+    .custom-input-box {
+      display: none;
+      margin-top: 10px;
+    }
+    .custom-input-box input {
+      width: 100%;
+      padding: 10px;
+      font-size: 0.9rem;
+      border: 1px solid var(--border-dark);
+      border-radius: 6px;
+      box-sizing: border-box;
+    }
+    .custom-input-box button {
+      width: 100%;
+      margin-top: 6px;
+      padding: 10px;
+      background: var(--primary);
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-weight: bold;
     }
   </style>
 </head>
@@ -242,16 +259,25 @@
     </div>
   </div>
 
-  <!-- LOCATION SELECTION MODAL -->
+  <!-- LOCATION MODAL -->
   <div id="locationModal" class="modal">
     <div class="modal-content">
       <h4 style="margin:0 0 10px 0;">Confirm Location</h4>
-      <p style="font-size:0.8rem; color:#64748b; margin-bottom:8px;">Select the address option matching your spot:</p>
+      <button class="sec-btn" style="width:100%; background:#2563eb; margin-bottom:8px;" onclick="toggleCustomAddressInput()">✏️ Type / Edit Address Manually</button>
+      
+      <div id="customBox" class="custom-input-box">
+        <input type="text" id="manualAddressInput" placeholder="e.g. 7634 Chalk Hill, Missouri City, TX 77459">
+        <button onclick="useManualAddress()">Use This Address</button>
+      </div>
+
+      <p style="font-size:0.8rem; color:#64748b; margin:10px 0 4px 0;">Or select a detected GPS match:</p>
       <div id="locationOptions"></div>
     </div>
   </div>
 
   <script>
+    const MAPBOX_TOKEN = "pk.eyJ1IjoiZ3Jhdml0eWJsb2NrNzEzIiwiYSI6ImNtb3l1a3cxajBjMjMycnB1a25rMXUzbjQifQ.3ZZ5e6kjVHkLvXKqGCXIZA";
+
     (function(){
       emailjs.init("HMt9YHUok2QVlgxUi");
     })();
@@ -309,39 +335,33 @@
       }
     }
 
-    async function fetchAddressVariants(lat, lon) {
-      // Expanded step offset (~550ft radius catch)
-      const offset = 0.0015; 
-      const offsets = [
-        { lat: lat, lon: lon },
-        { lat: lat + offset, lon: lon },
-        { lat: lat - offset, lon: lon },
-        { lat: lat, lon: lon + offset },
-        { lat: lat, lon: lon - offset },
-        { lat: lat + offset, lon: lon + offset },
-        { lat: lat - offset, lon: lon - offset }
-      ];
+    async function fetchMapboxAddresses(lat, lon) {
+      try {
+        const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lon},${lat}.json?types=address&limit=5&access_token=${MAPBOX_TOKEN}`;
+        const res = await fetch(url);
+        const data = await res.json();
+        
+        let addresses = data.features.map(f => {
+          let num = f.address || "";
+          let street = f.text || "";
+          let city = "";
+          let state = "TX";
+          let zip = "";
 
-      let results = [];
-      for (let pos of offsets) {
-        try {
-          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${pos.lat}&lon=${pos.lon}`);
-          const data = await res.json();
-          const addr = data.address;
-          const road = addr.road || addr.pedestrian || "";
-          const houseNumber = addr.house_number || "";
-          const city = addr.city || addr.town || addr.village || "";
-          const state = addr.state_code || "TX";
-          const postcode = addr.postcode || "";
+          if (f.context) {
+            f.context.forEach(c => {
+              if (c.id.startsWith("place")) city = c.text;
+              if (c.id.startsWith("postcode")) zip = c.text;
+            });
+          }
 
-          // Strict format: Street Number, Street Name, City, State Zip
-          let formatted = `${houseNumber} ${road}, ${city}, ${state} ${postcode}`.trim().replace(/^,\s*/, '');
-          if (formatted && !results.includes(formatted)) results.push(formatted);
-        } catch {
-          // Fallback
-        }
+          return `${num} ${street}, ${city}, ${state} ${zip}`.trim().replace(/^,\s*/, '');
+        });
+
+        return addresses.length ? addresses : [`${lat.toFixed(4)}, ${lon.toFixed(4)}`];
+      } catch {
+        return [`${lat.toFixed(4)}, ${lon.toFixed(4)}`];
       }
-      return results.length ? results : [`${lat.toFixed(4)}, ${lon.toFixed(4)}`];
     }
 
     function initiateTripToggle() {
@@ -352,7 +372,7 @@
 
       document.getElementById("mainBtn").innerText = "Locating GPS...";
       navigator.geolocation.getCurrentPosition(async (pos) => {
-        const options = await fetchAddressVariants(pos.coords.latitude, pos.coords.longitude);
+        const options = await fetchMapboxAddresses(pos.coords.latitude, pos.coords.longitude);
         showLocationOptions(options);
       }, () => {
         alert("Unable to fetch GPS location.");
@@ -363,6 +383,11 @@
     function showLocationOptions(options) {
       const container = document.getElementById("locationOptions");
       container.innerHTML = "";
+      
+      if (options.length) {
+        document.getElementById("manualAddressInput").value = options[0];
+      }
+
       options.forEach(opt => {
         const div = document.createElement("div");
         div.className = "loc-option";
@@ -373,8 +398,23 @@
       document.getElementById("locationModal").style.display = "flex";
     }
 
+    function toggleCustomAddressInput() {
+      const box = document.getElementById("customBox");
+      box.style.display = box.style.display === "block" ? "none" : "block";
+    }
+
+    function useManualAddress() {
+      const val = document.getElementById("manualAddressInput").value.trim();
+      if (!val) {
+        alert("Please enter a valid address.");
+        return;
+      }
+      selectLocation(val);
+    }
+
     function selectLocation(selectedAddr) {
       document.getElementById("locationModal").style.display = "none";
+      document.getElementById("customBox").style.display = "none";
       
       if (!activeTrip) {
         activeTrip = {
