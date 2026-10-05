@@ -13,7 +13,7 @@
       --danger: #dc2626;
       --bg: #f8fafc;
       --card: #ffffff;
-      --border: #cbd5e1;
+      --border: #0f172a;
       --text: #0f172a;
     }
     body {
@@ -28,7 +28,7 @@
       border-radius: 8px;
       padding: 14px;
       margin-bottom: 12px;
-      border: 1px solid var(--border);
+      border: 1px solid #cbd5e1;
       box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     }
     .status-grid {
@@ -78,18 +78,30 @@
       margin-top: 8px;
       background: #fff;
     }
-    table.excel-grid th, table.excel-grid td {
-      border: 1px solid #cbd5e1;
-      padding: 8px 6px;
+    table.excel-grid th {
+      background: #1e3a8a;
+      color: #ffffff;
+      font-weight: bold;
+      padding: 8px;
+      border: 2px solid #0f172a;
       text-align: left;
     }
-    table.excel-grid th {
-      background: #e2e8f0;
-      color: #334155;
-      font-weight: bold;
+    table.excel-grid td {
+      border: 2px solid #0f172a; /* Thick border around each trip row */
+      padding: 6px;
+      text-align: left;
+      vertical-align: middle;
     }
-    table.excel-grid tr:nth-child(even) {
-      background: #f8fafc;
+    .route-box {
+      display: flex;
+      flex-direction: column;
+    }
+    .route-from {
+      padding-bottom: 4px;
+      border-bottom: 1px dashed #cbd5e1; /* Thin line separating From/To */
+    }
+    .route-to {
+      padding-top: 4px;
     }
 
     .btn-group {
@@ -127,7 +139,7 @@
     }
     .loc-option {
       padding: 10px;
-      border: 1px solid var(--border);
+      border: 1px solid #cbd5e1;
       margin-top: 8px;
       border-radius: 6px;
       font-size: 0.85rem;
@@ -168,10 +180,10 @@
       <table class="excel-grid" id="logTable">
         <thead>
           <tr>
-            <th>Start</th>
-            <th>Depart / Arrive Location (City, Zip, County)</th>
-            <th>Stop</th>
-            <th>Mins</th>
+            <th style="width: 15%;">Start</th>
+            <th style="width: 60%;">Trip Details (From / To)</th>
+            <th style="width: 15%;">Stop</th>
+            <th style="width: 10%;">Mins</th>
           </tr>
         </thead>
         <tbody id="logBody"></tbody>
@@ -187,13 +199,12 @@
   <div id="locationModal" class="modal">
     <div class="modal-content">
       <h4 style="margin:0 0 10px 0;">Confirm Your Current Location</h4>
-      <p style="font-size:0.8rem; color:#64748b; margin-bottom:8px;">Select the address option that best matches your spot:</p>
+      <p style="font-size:0.8rem; color:#64748b; margin-bottom:8px;">Select the address that matches your spot:</p>
       <div id="locationOptions"></div>
     </div>
   </div>
 
   <script>
-    // INITIALIZE EMAILJS WITH YOUR PUBLIC KEY
     (function(){
       emailjs.init("HMt9YHUok2QVlgxUi");
     })();
@@ -208,14 +219,12 @@
       const currentMins = now.getHours() * 60 + now.getMinutes();
       const todayStr = now.toISOString().split('T')[0];
 
-      // Auto Send at 11:00 PM (23:00)
       if (now.getHours() === 23 && lastSentDate !== todayStr) {
         saveAndEmailLog(true);
         lastSentDate = todayStr;
         localStorage.setItem("odl_last_auto_send", todayStr);
       }
 
-      // 1. Daily Driving Used (240 Mins Cap)
       const todayMinsUsed = logs
         .filter(l => l.date === todayStr)
         .reduce((sum, l) => sum + l.durationMins, 0);
@@ -225,16 +234,13 @@
       const remMins = minsLeft % 60;
       document.getElementById("driveBudget").innerText = `${hrsLeft}h ${remMins < 10 ? '0' : ''}${remMins}m`;
 
-      // 2. Active Window Countdown
       let windows = [];
       if (day >= 1 && day <= 4) { 
-        // Mon-Thu: 7 AM - 2 PM & 6 PM - 11 PM
         windows = [
           { start: 7*60, end: 14*60, label: "Mon-Thu Block 1 (7 AM - 2 PM)" },
           { start: 18*60, end: 23*60, label: "Mon-Thu Block 2 (6 PM - 11 PM)" }
         ];
       } else { 
-        // Fri-Sun: 7 AM - 7 PM
         windows = [
           { start: 7*60, end: 19*60, label: "Fri-Sun Block (7 AM - 7 PM)" }
         ];
@@ -257,10 +263,14 @@
     }
 
     async function fetchAddressVariants(lat, lon) {
+      // Step offset approx ~290ft to cover ~600ft radius
+      const offset = 0.0008; 
       const offsets = [
         { lat: lat, lon: lon },
-        { lat: lat + 0.00015, lon: lon + 0.00015 },
-        { lat: lat - 0.00015, lon: lon - 0.00015 }
+        { lat: lat + offset, lon: lon },
+        { lat: lat - offset, lon: lon },
+        { lat: lat, lon: lon + offset },
+        { lat: lat, lon: lon - offset }
       ];
 
       let results = [];
@@ -272,16 +282,16 @@
           const road = addr.road || addr.pedestrian || "";
           const houseNumber = addr.house_number || "";
           const city = addr.city || addr.town || addr.village || "";
+          const state = addr.state_code || addr.state || "TX";
           const postcode = addr.postcode || "";
-          const county = addr.county || "";
 
-          let formatted = `${houseNumber} ${road}, ${city} ${postcode} (${county})`;
-          if (!results.includes(formatted)) results.push(formatted);
+          let formatted = `${houseNumber} ${road}, ${city}, ${state} ${postcode}`.trim().replace(/^,\s*/, '');
+          if (formatted && !results.includes(formatted)) results.push(formatted);
         } catch {
-          results.push(`${lat.toFixed(4)}, ${lon.toFixed(4)}`);
+          // Fallback
         }
       }
-      return results;
+      return results.length ? results : [`${lat.toFixed(4)}, ${lon.toFixed(4)}`];
     }
 
     function initiateTripToggle() {
@@ -366,7 +376,12 @@
       body.innerHTML = todayLogs.map(l => `
         <tr>
           <td><b>${l.startTimeStr}</b></td>
-          <td><b>From:</b> ${l.startLoc}<br><b>To:</b> ${l.endLoc}</td>
+          <td>
+            <div class="route-box">
+              <div class="route-from"><b>From:</b> ${l.startLoc}</div>
+              <div class="route-to"><b>To:</b> ${l.endLoc}</div>
+            </div>
+          </td>
           <td><b>${l.endTimeStr}</b></td>
           <td><b>${l.durationMins}m</b></td>
         </tr>
@@ -395,7 +410,7 @@
     function exportLog() {
       let printWindow = window.open('', '', 'height=600,width=800');
       printWindow.document.write('<html><head><title>Texas ODL Driving Log</title>');
-      printWindow.document.write('<style>table { width:100%; border-collapse:collapse; } th, td { border:1px solid #cbd5e1; padding:8px; text-align:left; }</style>');
+      printWindow.document.write('<style>table { width:100%; border-collapse:collapse; } th, td { border:2px solid #0f172a; padding:6px; text-align:left; } .route-from { padding-bottom:4px; border-bottom:1px dashed #cbd5e1; } .route-to { padding-top:4px; }</style>');
       printWindow.document.write('</head><body>');
       printWindow.document.write('<h2>Official Texas ODL Driving Log - ' + new Date().toLocaleDateString() + '</h2>');
       printWindow.document.write(document.getElementById('logTable').outerHTML);
