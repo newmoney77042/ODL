@@ -83,7 +83,7 @@
     .btn-start { background: var(--accent); }
     .btn-stop { background: var(--danger); }
     
-    /* SCROLLABLE TABLE CONTAINER */
+    /* TABLE CONTAINER */
     .scroll-hint {
       display: flex;
       justify-content: space-between;
@@ -102,9 +102,8 @@
     }
     table.excel-grid {
       width: 100%;
-      min-width: 420px;
       border-collapse: collapse;
-      font-size: 0.8rem;
+      font-size: 0.82rem;
       background: #ffffff;
     }
     table.excel-grid th {
@@ -144,7 +143,7 @@
     }
     .route-item {
       padding: 6px 8px;
-      font-size: 0.78rem;
+      font-size: 0.8rem;
     }
     .route-from {
       border-bottom: 1px solid var(--border-light);
@@ -154,6 +153,17 @@
       color: #334155;
       display: inline-block;
       width: 38px;
+    }
+
+    /* FOOTER TOTAL ROW */
+    table.excel-grid tfoot tr {
+      background: #f1f5f9;
+      font-weight: bold;
+      border-top: 3px solid var(--border-dark);
+    }
+    table.excel-grid tfoot td {
+      padding: 8px 6px;
+      font-size: 0.85rem;
     }
 
     .btn-group {
@@ -253,23 +263,28 @@
   </div>
 
   <!-- LOG TABLE -->
-  <div class="card" id="exportContainer">
+  <div class="card">
     <div class="scroll-hint">
       <h3 style="margin:0; font-size:1rem;">Today's Official ODL Log</h3>
-      <span>Swipe ↔ / Scroll ↕</span>
+      <span>Scroll ↕</span>
     </div>
     <div class="table-container">
       <table class="excel-grid" id="logTable">
         <thead>
           <tr>
-            <th style="width: 15%;">Start</th>
-            <th style="width: 47%;">Depart/Arrive Location</th>
-            <th style="width: 13%;">Stop</th>
-            <th style="width: 9%;">Min</th>
-            <th style="width: 16%;">Running Total</th>
+            <th style="width: 18%;">Start</th>
+            <th style="width: 54%;">Depart/Arrive Location</th>
+            <th style="width: 14%;">Stop</th>
+            <th style="width: 14%;">Time</th>
           </tr>
         </thead>
         <tbody id="logBody"></tbody>
+        <tfoot>
+          <tr>
+            <td colspan="3" style="text-align: right; font-weight: bold; padding-right: 12px; background: #e2e8f0;">Total Drive Time Today:</td>
+            <td id="dayTotalCell" style="font-weight: bold; background: #cbd5e1;">0h 00m</td>
+          </tr>
+        </tfoot>
       </table>
     </div>
     <div class="btn-group">
@@ -308,6 +323,7 @@
     function formatTimeDisplay(totalMins) {
       const h = Math.floor(totalMins / 60);
       const m = totalMins % 60;
+      if (h === 0) return `${m}m`;
       return `${h}h ${m < 10 ? '0' : ''}${m}m`;
     }
 
@@ -364,7 +380,6 @@
     }
 
     async function fetchMapboxAddresses(lat, lon) {
-      // Offset tight step (~150 ft radius)
       const offset = 0.0004; 
       const offsets = [
         { lat: lat, lon: lon },
@@ -490,6 +505,7 @@
       const btn = document.getElementById("mainBtn");
       const info = document.getElementById("activeTripInfo");
       const body = document.getElementById("logBody");
+      const dayTotalCell = document.getElementById("dayTotalCell");
 
       if (activeTrip) {
         btn.innerText = "STOP TRIP";
@@ -505,10 +521,10 @@
       const todayStr = new Date().toISOString().split('T')[0];
       const todayLogs = logs.filter(l => l.date === todayStr);
       
-      let runningTotalAcc = 0;
+      let totalMinsToday = 0;
 
       body.innerHTML = todayLogs.map(l => {
-        runningTotalAcc += l.durationMins;
+        totalMinsToday += l.durationMins;
         return `
           <tr class="trip-row">
             <td class="td-time">${l.startTimeStr}</td>
@@ -519,31 +535,23 @@
               </div>
             </td>
             <td class="td-time">${l.endTimeStr}</td>
-            <td class="td-time">${l.durationMins}m</td>
-            <td class="td-time">${formatTimeDisplay(runningTotalAcc)}</td>
+            <td class="td-time">${formatTimeDisplay(l.durationMins)}</td>
           </tr>
         `;
       }).join('');
+
+      dayTotalCell.innerText = formatTimeDisplay(totalMinsToday);
 
       updateCounters();
     }
 
     function saveAndEmailLog(isAuto = false) {
       const todayStr = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-      
-      const todayIso = new Date().toISOString().split('T')[0];
-      const totalMinsToday = logs
-        .filter(l => l.date === todayIso)
-        .reduce((sum, l) => sum + l.durationMins, 0);
 
-      // Email Template Construction (Mirrors Browser UI Exactly)
       const fullEmailHTML = `
         <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background:#f8fafc; padding:16px;">
           <div style="background:#1e3a8a; color:white; text-align:center; padding:12px; font-size:1.2rem; font-weight:bold; border-radius:8px; margin-bottom:12px; border:2px solid #0f172a;">
             ${todayStr}
-          </div>
-          <div style="background:white; padding:12px; border-radius:8px; border:1px solid #cbd5e1; margin-bottom:12px; text-align:center; font-weight:bold; color:#1e3a8a;">
-            Total Drive Time Used Today: ${formatTimeDisplay(totalMinsToday)} (Cap: 4h 00m)
           </div>
           <div style="background:white; padding:8px; border-radius:8px; border:1px solid #cbd5e1;">
             ${document.getElementById('logTable').outerHTML}
@@ -567,9 +575,10 @@
     function exportLog() {
       let printWindow = window.open('', '', 'height=600,width=800');
       printWindow.document.write('<html><head><title>Texas ODL Driving Log</title>');
-      printWindow.document.write('<style>table { width:100%; border-collapse:collapse; border:3px solid #0f172a; } th { background:#7dd3fc; border:2px solid #0f172a; padding:8px; } tr:nth-child(even) { background:#e0f2fe; } td { border:2px solid #0f172a; padding:0; text-align:center; } .route-box { text-align:left; } .route-item { padding:6px; } .route-from { border-bottom:1px solid #cbd5e1; } .route-label { font-weight:bold; width:42px; display:inline-block; }</style>');
+      printWindow.document.write('<style>table { width:100%; border-collapse:collapse; border:3px solid #0f172a; } th { background:#7dd3fc; border:2px solid #0f172a; padding:8px; } tr:nth-child(even) { background:#e0f2fe; } td { border:2px solid #0f172a; padding:0; text-align:center; } .route-box { text-align:left; } .route-item { padding:6px; } .route-from { border-bottom:1px solid #cbd5e1; } .route-label { font-weight:bold; width:42px; display:inline-block; } tfoot td { font-weight:bold; padding:8px; border-top:3px solid #0f172a; }</style>');
       printWindow.document.write('</head><body>');
-      printWindow.document.write('<h2>Official Texas ODL Driving Log - ' + new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) + '</h2>');
+      printWindow.document.write('<h2 style="text-align:center;">Official Texas ODL Driving Log</h2>');
+      printWindow.document.write('<h3 style="text-align:center; color:#1e3a8a;">' + new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) + '</h3>');
       printWindow.document.write(document.getElementById('logTable').outerHTML);
       printWindow.document.write('</body></html>');
       printWindow.document.close();
