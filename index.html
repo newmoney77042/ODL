@@ -94,7 +94,7 @@
     }
     .table-container {
       overflow-x: auto;
-      max-height: 380px;
+      max-height: 420px;
       overflow-y: auto;
       border: 3px solid var(--border-dark);
       border-radius: 4px;
@@ -187,29 +187,6 @@
       color: white;
       grid-column: span 2;
       margin-top: 4px;
-    }
-
-    /* RECEIPT BACKUP SECTION */
-    .receipt-list {
-      margin-top: 8px;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-    .receipt-item {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      background: #f1f5f9;
-      padding: 8px 12px;
-      border-radius: 6px;
-      border: 1px solid var(--border-light);
-      font-size: 0.85rem;
-    }
-    .receipt-link {
-      color: #2563eb;
-      font-weight: bold;
-      text-decoration: none;
     }
 
     /* LOCATION SELECTION & EDIT MODAL */
@@ -323,16 +300,6 @@
     </div>
   </div>
 
-  <!-- RECEIPT & PROOF ATTACHMENTS -->
-  <div class="card">
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-      <h3 style="margin:0; font-size:0.95rem;">Receipt & Expense Backups</h3>
-      <input type="file" id="receiptInput" accept="image/*" capture="environment" style="display:none;" onchange="handleReceiptUpload(event)">
-      <button id="uploadBtn" class="sec-btn" style="padding:6px 10px; background:#1e3a8a;" onclick="document.getElementById('receiptInput').click()">📸 Snap Receipt</button>
-    </div>
-    <div id="receiptContainer" class="receipt-list"></div>
-  </div>
-
   <!-- LOCATION MODAL -->
   <div id="locationModal" class="modal">
     <div class="modal-content">
@@ -351,7 +318,6 @@
 
   <script>
     const MAPBOX_TOKEN = "pk.eyJ1IjoiZ3Jhdml0eWJsb2NrNzEzIiwiYSI6ImNtb3l1a3cxajBjMjMycnB1a25rMXUzbjQifQ.3ZZ5e6kjVHkLvXKqGCXIZA";
-    const IMGBB_API_KEY = "c1851e22be58a0bb91d293d05ea5b34d";
 
     (function(){
       emailjs.init("HMt9YHUok2QVlgxUi");
@@ -359,7 +325,6 @@
 
     let activeTrip = JSON.parse(localStorage.getItem("odl_active_trip")) || null;
     let logs = JSON.parse(localStorage.getItem("odl_logs")) || [];
-    let receipts = JSON.parse(localStorage.getItem("odl_receipts")) || [];
     let lastSentDate = localStorage.getItem("odl_last_auto_send") || "";
 
     function formatTimeDisplay(totalMins) {
@@ -543,54 +508,11 @@
       renderState();
     }
 
-    // UPLOAD RECEIPT TO FREE IMAGE HOST (IMGBB) AND SAVE URL LINK ONLY
-    async function handleReceiptUpload(event) {
-      const file = event.target.files[0];
-      if (!file) return;
-
-      const uploadBtn = document.getElementById("uploadBtn");
-      uploadBtn.innerText = "Uploading...";
-      uploadBtn.disabled = true;
-
-      const formData = new FormData();
-      formData.append("image", file);
-
-      try {
-        const response = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
-          method: "POST",
-          body: formData
-        });
-        const result = await response.json();
-
-        if (result.success) {
-          const todayStr = new Date().toISOString().split('T')[0];
-          const newReceipt = {
-            date: todayStr,
-            timeStr: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            url: result.data.url
-          };
-
-          receipts.push(newReceipt);
-          localStorage.setItem("odl_receipts", JSON.stringify(receipts));
-        } else {
-          alert("Image upload failed. Please try again.");
-        }
-      } catch (err) {
-        alert("Error uploading receipt image.");
-      } finally {
-        uploadBtn.innerText = "📸 Snap Receipt";
-        uploadBtn.disabled = false;
-        renderState();
-      }
-    }
-
     function clearTodayLog() {
-      if (confirm("Are you sure you want to clear all driving log entries and receipt links for today?")) {
+      if (confirm("Are you sure you want to clear all driving log entries for today?")) {
         const todayStr = new Date().toISOString().split('T')[0];
         logs = logs.filter(l => l.date !== todayStr);
-        receipts = receipts.filter(r => r.date !== todayStr);
         localStorage.setItem("odl_logs", JSON.stringify(logs));
-        localStorage.setItem("odl_receipts", JSON.stringify(receipts));
         renderState();
       }
     }
@@ -600,7 +522,6 @@
       const info = document.getElementById("activeTripInfo");
       const body = document.getElementById("logBody");
       const dayTotalCell = document.getElementById("dayTotalCell");
-      const receiptContainer = document.getElementById("receiptContainer");
 
       if (activeTrip) {
         btn.innerText = "STOP TRIP";
@@ -615,7 +536,6 @@
 
       const todayStr = new Date().toISOString().split('T')[0];
       const todayLogs = logs.filter(l => l.date === todayStr);
-      const todayReceipts = receipts.filter(r => r.date === todayStr);
       
       let totalMinsToday = 0;
 
@@ -638,34 +558,11 @@
 
       dayTotalCell.innerText = formatTimeDisplay(totalMinsToday);
 
-      receiptContainer.innerHTML = todayReceipts.map(r => `
-        <div class="receipt-item">
-          <span><b>Receipt Snapped:</b> ${r.timeStr}</span>
-          <a href="${r.url}" target="_blank" class="receipt-link">🔗 View Receipt</a>
-        </div>
-      `).join('');
-
       updateCounters();
     }
 
     function saveAndEmailLog(isAuto = false) {
       const todayStr = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-      const todayIso = new Date().toISOString().split('T')[0];
-      const todayReceipts = receipts.filter(r => r.date === todayIso);
-
-      let receiptHTML = '';
-      if (todayReceipts.length) {
-        receiptHTML = `
-          <h4 style="margin:16px 0 8px 0; color:#1e3a8a;">Supporting Receipt Links</h4>
-          <ul style="margin:0; padding-left:20px; font-size:0.85rem;">
-            ${todayReceipts.map(r => `
-              <li style="margin-bottom:4px;">
-                <b>${r.timeStr}:</b> <a href="${r.url}" target="_blank" style="color:#2563eb; font-weight:bold;">View Receipt Photo</a>
-              </li>
-            `).join('')}
-          </ul>
-        `;
-      }
 
       const fullEmailHTML = `
         <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background:#f8fafc; padding:16px;">
@@ -675,7 +572,6 @@
           <div style="background:white; padding:8px; border-radius:8px; border:1px solid #cbd5e1;">
             ${document.getElementById('logTable').outerHTML}
           </div>
-          ${receiptHTML}
         </div>
       `;
 
@@ -686,7 +582,7 @@
 
       emailjs.send("service_fqmzxin", "template_e2ge43a", templateParams)
         .then(() => {
-          if (!isAuto) alert("Log & Receipt Links saved and emailed successfully!");
+          if (!isAuto) alert("Log saved and emailed successfully!");
         }, (err) => {
           if (!isAuto) alert("Failed to send email. Error: " + JSON.stringify(err));
         });
@@ -700,17 +596,6 @@
       printWindow.document.write('<h2 style="text-align:center;">Official Texas ODL Driving Log</h2>');
       printWindow.document.write('<h3 style="text-align:center; color:#1e3a8a;">' + new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) + '</h3>');
       printWindow.document.write(document.getElementById('logTable').outerHTML);
-      
-      const todayIso = new Date().toISOString().split('T')[0];
-      const todayReceipts = receipts.filter(r => r.date === todayIso);
-      if (todayReceipts.length) {
-        printWindow.document.write('<h3>Receipt Links & Backups</h3><ul>');
-        todayReceipts.forEach(r => {
-          printWindow.document.write(`<li><b>${r.timeStr}:</b> <a href="${r.url}" target="_blank">${r.url}</a></li>`);
-        });
-        printWindow.document.write('</ul>');
-      }
-
       printWindow.document.write('</body></html>');
       printWindow.document.close();
       printWindow.print();
